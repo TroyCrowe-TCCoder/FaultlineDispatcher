@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="FaultlineDispatcher.Telemetry.ApplicationInsights/FaultlineDispatcher.Telemetry.ApplicationInsights.csproj" />
+  <Project Path="FaultlineDispatcher.Tests/FaultlineDispatcher.Tests.csproj" />
+  <Project Path="FaultlineDispatcher/FaultlineDispatcher.csproj" />
+</Solution>
