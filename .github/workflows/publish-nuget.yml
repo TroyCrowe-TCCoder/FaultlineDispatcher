@@ -28,6 +28,9 @@ jobs:
       - name: Pack FaultlineDispatcher.Telemetry.ApplicationInsights
         run: dotnet pack FaultlineDispatcher.Telemetry.ApplicationInsights/FaultlineDispatcher.Telemetry.ApplicationInsights.csproj -c Release -o "${{ github.workspace }}/nupkgs"
 
+      - name: Pack FaultlineDispatcher.SqlServer
+        run: dotnet pack FaultlineDispatcher.SqlServer/FaultlineDispatcher.SqlServer.csproj -c Release -o "${{ github.workspace }}/nupkgs"
+
       - name: List packed nupkgs
         run: Get-ChildItem -Path "${{ github.workspace }}/nupkgs" -Filter *.nupkg -ErrorAction SilentlyContinue | Format-Table -AutoSize
 

@@ -1,4 +1,5 @@
 <Solution>
+  <Project Path="FaultlineDispatcher.SqlServer/FaultlineDispatcher.SqlServer.csproj" />
   <Project Path="FaultlineDispatcher.Telemetry.ApplicationInsights/FaultlineDispatcher.Telemetry.ApplicationInsights.csproj" />
   <Project Path="FaultlineDispatcher.Tests/FaultlineDispatcher.Tests.csproj" />
   <Project Path="FaultlineDispatcher/FaultlineDispatcher.csproj" />

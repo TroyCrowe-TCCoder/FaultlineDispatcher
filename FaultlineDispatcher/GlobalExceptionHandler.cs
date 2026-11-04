@@ -4,31 +4,57 @@ using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 /// <summary>
-/// Centralized global error handler. Logs every unhandled request exception exactly once with
-/// structured metadata, then produces a <see cref="ProblemDetails"/> response carrying the
-/// request's correlation identifier as <c>traceId</c>.
+/// Centralized global error handler. Maps the exception to a safe, configurable response (status, title, detail)
+/// through the registered <see cref="IExceptionMapper"/> chain, logs the failure exactly once with structured
+/// metadata, and writes a <see cref="ProblemDetails"/> response. Exception text is never returned to the caller.
 /// </summary>
 public sealed class GlobalExceptionHandler : IExceptionHandler
 {
-    // Observability: standard structured message for unhandled request failures.
-    private static readonly Action<ILogger, string, string, Exception?> _logUnhandledRequestException =
-        LoggerMessage.Define<string, string>(
+    // Non-standard but widely used status for a client that closed the connection.
+    private const int ClientClosedRequest = 499;
+
+    // Observability: standard structured message for failed requests. Single point where request exceptions are logged.
+    private static readonly Action<ILogger, string, string, int, string, Exception?> _logRequestException =
+        LoggerMessage.Define<string, string, int, string>(
             LogLevel.Error,
             new EventId(1001, nameof(GlobalExceptionHandler)),
-            "Unhandled exception for HTTP {Method} {Path}");
+            "Unhandled exception for HTTP {Method} {Path} mapped to {StatusCode} ({ResponseKey})");
+
+    private static readonly Action<ILogger, string, string, int, string, Exception?> _logClientRequestException =
+        LoggerMessage.Define<string, string, int, string>(
+            LogLevel.Warning,
+            new EventId(1001, nameof(GlobalExceptionHandler)),
+            "Request exception for HTTP {Method} {Path} mapped to {StatusCode} ({ResponseKey})");
+
+    private static readonly Action<ILogger, string, Exception?> _logMapperFailed =
+        LoggerMessage.Define<string>(
+            LogLevel.Warning,
+            new EventId(1002, "ExceptionMapperFailed"),
+            "Exception mapper {Mapper} threw and was skipped.");
+
+    private static readonly IExceptionMapper DefaultMapper = new DefaultExceptionMapper();
 
     private readonly ILogger<GlobalExceptionHandler> _logger;
     private readonly IProblemDetailsService _problemDetailsService;
+    private readonly IExceptionMapper[] _mappers;
+    private readonly FaultlineOptions _options;
 
-    public GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logger, IProblemDetailsService problemDetailsService)
+    public GlobalExceptionHandler(
+        ILogger<GlobalExceptionHandler> logger,
+        IProblemDetailsService problemDetailsService,
+        IEnumerable<IExceptionMapper>? mappers = null,
+        IOptions<FaultlineOptions>? options = null)
     {
         ArgumentNullException.ThrowIfNull(logger);
         ArgumentNullException.ThrowIfNull(problemDetailsService);
 
         _logger = logger;
         _problemDetailsService = problemDetailsService;
+        _mappers = [.. mappers ?? [], DefaultMapper];
+        _options = options?.Value ?? new FaultlineOptions();
     }
 
     public async ValueTask<bool> TryHandleAsync(HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
@@ -36,11 +62,28 @@ public sealed class GlobalExceptionHandler : IExceptionHandler
         ArgumentNullException.ThrowIfNull(httpContext);
         ArgumentNullException.ThrowIfNull(exception);
 
-        // Observability: capture request metadata for the unhandled exception; this is the single
-        // point where unhandled exceptions are logged.
-        _logUnhandledRequestException(_logger, httpContext.Request.Method, httpContext.Request.Path, exception);
+        // The caller disconnected; there is nobody to answer and nothing to log as an error.
+        if (exception is OperationCanceledException && httpContext.RequestAborted.IsCancellationRequested)
+        {
+            httpContext.Response.StatusCode = ClientClosedRequest;
+            return true;
+        }
 
-        httpContext.Response.StatusCode = StatusCodes.Status500InternalServerError;
+        var key = ResolveKey(exception);
+        var response = ErrorResponseCatalog.Resolve(key, _options);
+
+        // Observability: capture request metadata for the exception; this is the single point where
+        // request exceptions are logged.
+        if (response.Status >= StatusCodes.Status500InternalServerError)
+        {
+            _logRequestException(_logger, httpContext.Request.Method, httpContext.Request.Path, response.Status, key, exception);
+        }
+        else
+        {
+            _logClientRequestException(_logger, httpContext.Request.Method, httpContext.Request.Path, response.Status, key, exception);
+        }
+
+        httpContext.Response.StatusCode = response.Status;
 
         return await _problemDetailsService.TryWriteAsync(new ProblemDetailsContext
         {
@@ -48,10 +91,38 @@ public sealed class GlobalExceptionHandler : IExceptionHandler
             Exception = exception,
             ProblemDetails = new ProblemDetails
             {
-                Status = StatusCodes.Status500InternalServerError,
-                Title = "An unexpected error occurred.",
-                Detail = "If this continues, contact support."
+                Status = response.Status,
+                Title = response.Title,
+                Detail = response.Detail
             }
         }).ConfigureAwait(false);
+    }
+
+    // Outer exception first, then each inner exception, so a wrapped SqlException is still recognized.
+    private string ResolveKey(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            foreach (var mapper in _mappers)
+            {
+                string? key;
+                try
+                {
+                    key = mapper.Map(current);
+                }
+                catch (Exception mapperException)
+                {
+                    _logMapperFailed(_logger, mapper.GetType().Name, mapperException);
+                    continue;
+                }
+
+                if (!string.IsNullOrWhiteSpace(key))
+                {
+                    return key;
+                }
+            }
+        }
+
+        return FaultlineResponseKeys.Unexpected;
     }
 }
