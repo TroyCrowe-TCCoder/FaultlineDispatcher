@@ -32,18 +32,27 @@ public sealed class AuthorizationProblemDetailsResultHandler : IAuthorizationMid
             new EventId(3, "SecurityEvent.AuthorizationForbidden"),
             "Authorization forbidden for user {UserId} on request to {Path}.");
 
+    private static readonly Action<ILogger, string, Exception?> DenialObserverFailedLogMessage =
+        LoggerMessage.Define<string>(
+            LogLevel.Warning,
+            new EventId(4, "AuthorizationDenialObserverFailed"),
+            "Authorization denial observer {Observer} threw and was skipped.");
+
     private readonly IProblemDetailsService _problemDetailsService;
     private readonly ILogger<AuthorizationProblemDetailsResultHandler> _logger;
+    private readonly IAuthorizationDenialObserver[] _observers;
 
     public AuthorizationProblemDetailsResultHandler(
         IProblemDetailsService problemDetailsService,
-        ILogger<AuthorizationProblemDetailsResultHandler> logger)
+        ILogger<AuthorizationProblemDetailsResultHandler> logger,
+        IEnumerable<IAuthorizationDenialObserver>? observers = null)
     {
         ArgumentNullException.ThrowIfNull(problemDetailsService);
         ArgumentNullException.ThrowIfNull(logger);
 
         _problemDetailsService = problemDetailsService;
         _logger = logger;
+        _observers = [.. observers ?? []];
     }
 
     public async Task HandleAsync(RequestDelegate next, HttpContext context, AuthorizationPolicy policy, PolicyAuthorizationResult authorizeResult)
@@ -64,6 +73,7 @@ public sealed class AuthorizationProblemDetailsResultHandler : IAuthorizationMid
             var path = context.Request.Path.Value ?? "/";
             AuthenticationChallengeLogMessage(_logger, path, null);
 
+            await NotifyObserversAsync(context, authorizeResult);
             await context.ChallengeAsync();
             await WriteProblemDetailsAsync(
                 context,
@@ -82,6 +92,7 @@ public sealed class AuthorizationProblemDetailsResultHandler : IAuthorizationMid
 
             AuthorizationForbiddenLogMessage(_logger, userId, path, null);
 
+            await NotifyObserversAsync(context, authorizeResult);
             await context.ForbidAsync();
             await WriteProblemDetailsAsync(
                 context,
@@ -92,6 +103,21 @@ public sealed class AuthorizationProblemDetailsResultHandler : IAuthorizationMid
         }
 
         context.Response.StatusCode = StatusCodes.Status403Forbidden;
+    }
+
+    private async Task NotifyObserversAsync(HttpContext context, PolicyAuthorizationResult authorizeResult)
+    {
+        foreach (var observer in _observers)
+        {
+            try
+            {
+                await observer.OnDeniedAsync(context, authorizeResult, context.RequestAborted).ConfigureAwait(false);
+            }
+            catch (Exception observerException)
+            {
+                DenialObserverFailedLogMessage(_logger, observer.GetType().Name, observerException);
+            }
+        }
     }
 
     private async Task WriteProblemDetailsAsync(HttpContext context, int statusCode, string title, string detail)

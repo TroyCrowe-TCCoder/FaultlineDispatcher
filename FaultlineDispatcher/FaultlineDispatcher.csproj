@@ -11,7 +11,7 @@
 
   <PropertyGroup>
 	<PackageId>FaultlineDispatcher</PackageId>
-	<Version>0.1.0</Version>
+	<Version>0.2.0</Version>
 	<Authors>Troy Crowe</Authors>
 	<Company>Single Source Management</Company>
 	<Description>Shared ASP.NET Core global exception handling and ProblemDetails-shaped authentication/authorization failure responses for .NET APIs.</Description>
