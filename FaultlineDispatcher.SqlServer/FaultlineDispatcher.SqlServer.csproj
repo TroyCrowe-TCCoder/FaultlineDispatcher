@@ -11,7 +11,7 @@
 
   <PropertyGroup>
 	<PackageId>FaultlineDispatcher.SqlServer</PackageId>
-	<Version>0.1.0</Version>
+	<Version>0.1.1</Version>
 	<Authors>Troy Crowe</Authors>
 	<Company>Single Source Management</Company>
 	<Description>SQL Server exception mapper for FaultlineDispatcher. Maps SqlException error numbers to safe, configurable HTTP responses.</Description>
@@ -29,8 +29,8 @@
   </ItemGroup>
 
   <ItemGroup>
-	<PackageReference Include="Microsoft.Data.SqlClient" Version="6.1.3" />
-	<PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All" />
+	<PackageReference Include="Microsoft.Data.SqlClient" Version="6.1.8" />
+	<PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.403" PrivateAssets="All" />
   </ItemGroup>
 
   <ItemGroup>
