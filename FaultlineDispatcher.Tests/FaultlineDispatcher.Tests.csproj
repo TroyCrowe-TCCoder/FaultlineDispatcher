@@ -24,6 +24,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\FaultlineDispatcher\FaultlineDispatcher.csproj" />
+    <ProjectReference Include="..\FaultlineDispatcher.SqlServer\FaultlineDispatcher.SqlServer.csproj" />
   </ItemGroup>
 
 </Project>

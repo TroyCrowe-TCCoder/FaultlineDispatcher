@@ -22,8 +22,36 @@ public static class ServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
 
         services.AddProblemDetails();
+        services.AddOptions<FaultlineOptions>().BindConfiguration(FaultlineOptions.SectionName);
         services.AddExceptionHandler<GlobalExceptionHandler>();
         services.AddSingleton<IAuthorizationMiddlewareResultHandler, AuthorizationProblemDetailsResultHandler>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Registers an <see cref="IExceptionMapper"/> that runs before the built-in mapper, in registration order.
+    /// </summary>
+    public static IServiceCollection AddExceptionMapper<TMapper>(this IServiceCollection services)
+        where TMapper : class, IExceptionMapper
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.AddSingleton<IExceptionMapper, TMapper>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Registers an <see cref="IAuthorizationDenialObserver"/> that is notified on every 401 and 403 produced by the
+    /// authorization middleware.
+    /// </summary>
+    public static IServiceCollection AddAuthorizationDenialObserver<TObserver>(this IServiceCollection services)
+        where TObserver : class, IAuthorizationDenialObserver
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.AddSingleton<IAuthorizationDenialObserver, TObserver>();
 
         return services;
     }
