@@ -1,17 +1,15 @@
 namespace FaultlineDispatcher;
 
 /// <summary>
-/// Host-level overrides for the responses FaultlineDispatcher returns. Bound from the
-/// <c>Faultline</c> configuration section.
+/// Responses FaultlineDispatcher returns to callers. The library ships no response text: the host defines every
+/// response in code through <see cref="ServiceCollectionExtensions.AddFaultlineDispatcher"/>. The options are
+/// validated on start.
 /// </summary>
 public sealed class FaultlineOptions
 {
-    /// <summary>The configuration section the options are bound from.</summary>
-    public const string SectionName = "Faultline";
-
     /// <summary>
-    /// Response definitions keyed by response key (see <see cref="FaultlineResponseKeys"/>). An entry overrides
-    /// the library default for that key, field by field, or defines a new host-specific key.
+    /// Response definitions keyed by response key (see <see cref="FaultlineResponseKeys"/>). Every well-known key
+    /// must be defined. A host-specific key may also be added for use by its own <see cref="IExceptionMapper"/>.
     /// </summary>
     public Dictionary<string, ErrorResponse> Responses { get; } = new(StringComparer.OrdinalIgnoreCase);
 }

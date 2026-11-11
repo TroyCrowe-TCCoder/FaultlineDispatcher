@@ -1,9 +1,8 @@
 namespace FaultlineDispatcher.Tests;
 
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Authorization.Policy;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 public class ServiceCollectionExtensionsTests
@@ -14,7 +13,7 @@ public class ServiceCollectionExtensionsTests
         var services = new ServiceCollection();
         services.AddLogging();
 
-        services.AddFaultlineDispatcher();
+        services.AddTestFaultline();
 
         using var provider = services.BuildServiceProvider();
         var handler = provider.GetRequiredService<IAuthorizationMiddlewareResultHandler>();
@@ -26,7 +25,15 @@ public class ServiceCollectionExtensionsTests
     {
         IServiceCollection services = null!;
 
-        Assert.Throws<ArgumentNullException>(() => services.AddFaultlineDispatcher());
+        Assert.Throws<ArgumentNullException>(() => services.AddFaultlineDispatcher(_ => { }));
+    }
+
+    [Fact]
+    public void AddFaultlineDispatcher_ThrowsWhenConfigureIsNull()
+    {
+        var services = new ServiceCollection();
+
+        Assert.Throws<ArgumentNullException>(() => services.AddFaultlineDispatcher(null!));
     }
 
     [Fact]
@@ -34,36 +41,58 @@ public class ServiceCollectionExtensionsTests
     {
         var services = new ServiceCollection();
 
-        var result = services.AddFaultlineDispatcher();
+        var result = services.AddTestFaultline();
 
         Assert.Same(services, result);
+    }
+
+    [Fact]
+    public void AddFaultlineDispatcher_AppliesHostSuppliedResponses()
+    {
+        var services = new ServiceCollection();
+        services.AddTestFaultline();
+
+        using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<FaultlineOptions>>().Value;
+
+        Assert.Equal("The request is invalid.", options.Responses[FaultlineResponseKeys.BadRequest].Title);
+    }
+
+    [Fact]
+    public void AddFaultlineDispatcher_WithMissingResponses_FailsValidation()
+    {
+        var services = new ServiceCollection();
+        services.AddFaultlineDispatcher(_ => { });
+
+        using var provider = services.BuildServiceProvider();
+
+        Assert.Throws<OptionsValidationException>(() => provider.GetRequiredService<IOptions<FaultlineOptions>>().Value);
     }
 
     [Fact]
     public void AddTelemetryBootstrap_InvokesPluginConfigure()
     {
         var services = new ServiceCollection();
-        var configuration = new ConfigurationBuilder().Build();
-        FakeTelemetryBootstrap.ConfigureCallCount = 0;
+        var bootstrap = new FakeTelemetryBootstrap();
 
-        services.AddTelemetryBootstrap<FakeTelemetryBootstrap>(configuration);
+        services.AddTelemetryBootstrap(bootstrap);
 
-        Assert.Equal(1, FakeTelemetryBootstrap.ConfigureCallCount);
+        Assert.Equal(1, bootstrap.ConfigureCallCount);
     }
 
     [Fact]
-    public void AddTelemetryBootstrap_ThrowsWhenConfigurationIsNull()
+    public void AddTelemetryBootstrap_ThrowsWhenBootstrapIsNull()
     {
         var services = new ServiceCollection();
 
-        Assert.Throws<ArgumentNullException>(() => services.AddTelemetryBootstrap<FakeTelemetryBootstrap>(null!));
+        Assert.Throws<ArgumentNullException>(() => services.AddTelemetryBootstrap(null!));
     }
 
     private sealed class FakeTelemetryBootstrap : ITelemetryBootstrap
     {
-        public static int ConfigureCallCount;
+        public int ConfigureCallCount { get; private set; }
 
-        public void Configure(IServiceCollection services, IConfiguration configuration)
+        public void Configure(IServiceCollection services)
         {
             ConfigureCallCount++;
         }

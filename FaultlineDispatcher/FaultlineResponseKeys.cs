@@ -1,9 +1,9 @@
 namespace FaultlineDispatcher;
 
 /// <summary>
-/// Names of the built-in response definitions. An <see cref="IExceptionMapper"/> returns one of these
+/// Names of the well-known response definitions. An <see cref="IExceptionMapper"/> returns one of these
 /// keys (or a host-defined key); the status code and message are then resolved from
-/// <see cref="FaultlineOptions.Responses"/> and the library defaults.
+/// <see cref="FaultlineOptions.Responses"/>. The host must define every key listed here.
 /// </summary>
 public static class FaultlineResponseKeys
 {
@@ -27,4 +27,10 @@ public static class FaultlineResponseKeys
 
     /// <summary>500 - anything that is not recognized.</summary>
     public const string Unexpected = "Unexpected";
+
+    /// <summary>401 - authentication is required. The status is fixed; the host supplies the title and detail.</summary>
+    public const string Unauthorized = "Unauthorized";
+
+    /// <summary>403 - the user is not permitted. The status is fixed; the host supplies the title and detail.</summary>
+    public const string Forbidden = "Forbidden";
 }

@@ -2,8 +2,9 @@ namespace FaultlineDispatcher;
 
 using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 /// <summary>
 /// DI extensions for registering FaultlineDispatcher's core error-handling and
@@ -14,15 +15,18 @@ public static class ServiceCollectionExtensions
 {
     /// <summary>
     /// Registers <see cref="ProblemDetails"/>, the <see cref="GlobalExceptionHandler"/>, and the
-    /// <see cref="AuthorizationProblemDetailsResultHandler"/>. Call <c>app.UseExceptionHandler()</c>
+    /// <see cref="AuthorizationProblemDetailsResultHandler"/>. The host defines every response in
+    /// <paramref name="configure"/>; the options are validated on start. Call <c>app.UseExceptionHandler()</c>
     /// in the middleware pipeline after calling this.
     /// </summary>
-    public static IServiceCollection AddFaultlineDispatcher(this IServiceCollection services)
+    public static IServiceCollection AddFaultlineDispatcher(this IServiceCollection services, Action<FaultlineOptions> configure)
     {
         ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configure);
 
         services.AddProblemDetails();
-        services.AddOptions<FaultlineOptions>().BindConfiguration(FaultlineOptions.SectionName);
+        services.AddOptions<FaultlineOptions>().Configure(configure).ValidateOnStart();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<FaultlineOptions>, FaultlineOptionsValidator>());
         services.AddExceptionHandler<GlobalExceptionHandler>();
         services.AddSingleton<IAuthorizationMiddlewareResultHandler, AuthorizationProblemDetailsResultHandler>();
 
@@ -57,16 +61,15 @@ public static class ServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Invokes <see cref="ITelemetryBootstrap.Configure"/> for a specific telemetry plugin
-    /// implementation. No-op if the consumer chooses not to register a telemetry plugin at all.
+    /// Runs a specific telemetry plugin's <see cref="ITelemetryBootstrap.Configure"/>. The host builds the
+    /// bootstrap with its own options. No-op if the consumer chooses not to register a telemetry plugin at all.
     /// </summary>
-    public static IServiceCollection AddTelemetryBootstrap<TBootstrap>(this IServiceCollection services, IConfiguration configuration)
-        where TBootstrap : ITelemetryBootstrap, new()
+    public static IServiceCollection AddTelemetryBootstrap(this IServiceCollection services, ITelemetryBootstrap bootstrap)
     {
         ArgumentNullException.ThrowIfNull(services);
-        ArgumentNullException.ThrowIfNull(configuration);
+        ArgumentNullException.ThrowIfNull(bootstrap);
 
-        new TBootstrap().Configure(services, configuration);
+        bootstrap.Configure(services);
 
         return services;
     }

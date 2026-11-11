@@ -1,8 +1,11 @@
 namespace FaultlineDispatcher;
 
 /// <summary>
-/// A configurable error response definition. Every property is optional: a value that is not
-/// supplied falls back to the library default for the same response key.
+/// A response definition supplied by the host. <see cref="Title"/> is required for every key. <see cref="Status"/>
+/// is required except for <see cref="FaultlineResponseKeys.Unauthorized"/> and
+/// <see cref="FaultlineResponseKeys.Forbidden"/>, whose status is fixed. <see cref="Detail"/> is optional.
+/// Write messages a caller can act on without exposing internal information: no exception text, identifiers,
+/// table names or stack details.
 /// </summary>
 public sealed class ErrorResponse
 {

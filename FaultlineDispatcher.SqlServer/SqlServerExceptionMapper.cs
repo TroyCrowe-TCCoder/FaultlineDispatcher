@@ -14,10 +14,12 @@ public sealed class SqlServerExceptionMapper : IExceptionMapper
 
     private readonly SqlServerFaultlineOptions _options;
 
-    /// <summary>Creates the mapper. <paramref name="options"/> may be null to use the defaults.</summary>
-    public SqlServerExceptionMapper(IOptions<SqlServerFaultlineOptions>? options = null)
+    /// <summary>Creates the mapper from the host-supplied <paramref name="options"/>.</summary>
+    public SqlServerExceptionMapper(IOptions<SqlServerFaultlineOptions> options)
     {
-        _options = options?.Value ?? new SqlServerFaultlineOptions();
+        ArgumentNullException.ThrowIfNull(options);
+
+        _options = options.Value;
     }
 
     /// <inheritdoc />
