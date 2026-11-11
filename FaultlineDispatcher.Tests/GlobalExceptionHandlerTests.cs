@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 public class GlobalExceptionHandlerTests
@@ -13,7 +14,7 @@ public class GlobalExceptionHandlerTests
     public async Task TryHandleAsync_SetsInternalServerErrorStatusCode()
     {
         var (context, body) = TestHttpContextFactory.Create();
-        var handler = new GlobalExceptionHandler(NullLogger<GlobalExceptionHandler>.Instance, context.RequestServices.GetRequiredService<Microsoft.AspNetCore.Http.IProblemDetailsService>());
+        var handler = CreateHandler(context);
 
         var handled = await handler.TryHandleAsync(context, new InvalidOperationException("boom"), CancellationToken.None);
 
@@ -25,7 +26,7 @@ public class GlobalExceptionHandlerTests
     public async Task TryHandleAsync_WritesProblemDetailsBody()
     {
         var (context, body) = TestHttpContextFactory.Create();
-        var handler = new GlobalExceptionHandler(NullLogger<GlobalExceptionHandler>.Instance, context.RequestServices.GetRequiredService<Microsoft.AspNetCore.Http.IProblemDetailsService>());
+        var handler = CreateHandler(context);
 
         await handler.TryHandleAsync(context, new InvalidOperationException("boom"), CancellationToken.None);
 
@@ -41,21 +42,41 @@ public class GlobalExceptionHandlerTests
         var (context, _) = TestHttpContextFactory.Create();
         var problemDetailsService = context.RequestServices.GetRequiredService<Microsoft.AspNetCore.Http.IProblemDetailsService>();
 
-        Assert.Throws<ArgumentNullException>(() => new GlobalExceptionHandler(null!, problemDetailsService));
+        Assert.Throws<ArgumentNullException>(() => new GlobalExceptionHandler(null!, problemDetailsService, Options.Create(new FaultlineOptions())));
     }
 
     [Fact]
     public void Constructor_ThrowsWhenProblemDetailsServiceIsNull()
     {
-        Assert.Throws<ArgumentNullException>(() => new GlobalExceptionHandler(NullLogger<GlobalExceptionHandler>.Instance, null!));
+        Assert.Throws<ArgumentNullException>(() => new GlobalExceptionHandler(NullLogger<GlobalExceptionHandler>.Instance, null!, Options.Create(new FaultlineOptions())));
+    }
+
+    [Fact]
+    public void Constructor_ThrowsWhenOptionsAreNull()
+    {
+        var (context, _) = TestHttpContextFactory.Create();
+        var problemDetailsService = context.RequestServices.GetRequiredService<Microsoft.AspNetCore.Http.IProblemDetailsService>();
+
+        Assert.Throws<ArgumentNullException>(() => new GlobalExceptionHandler(NullLogger<GlobalExceptionHandler>.Instance, problemDetailsService, null!));
     }
 
     [Fact]
     public async Task TryHandleAsync_ThrowsWhenHttpContextIsNull()
     {
         var (context, _) = TestHttpContextFactory.Create();
-        var handler = new GlobalExceptionHandler(NullLogger<GlobalExceptionHandler>.Instance, context.RequestServices.GetRequiredService<Microsoft.AspNetCore.Http.IProblemDetailsService>());
+        var handler = CreateHandler(context);
 
         await Assert.ThrowsAsync<ArgumentNullException>(() => handler.TryHandleAsync(null!, new InvalidOperationException(), CancellationToken.None).AsTask());
+    }
+
+    private static GlobalExceptionHandler CreateHandler(HttpContext context)
+    {
+        var options = new FaultlineOptions();
+        TestResponses.DefineAll(options);
+
+        return new GlobalExceptionHandler(
+            NullLogger<GlobalExceptionHandler>.Instance,
+            context.RequestServices.GetRequiredService<Microsoft.AspNetCore.Http.IProblemDetailsService>(),
+            Options.Create(options));
     }
 }

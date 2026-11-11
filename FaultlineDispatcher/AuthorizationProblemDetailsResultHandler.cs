@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 /// <summary>
 /// Shapes authorization middleware outcomes (challenge/forbidden) into <see cref="ProblemDetails"/>
@@ -40,18 +41,22 @@ public sealed class AuthorizationProblemDetailsResultHandler : IAuthorizationMid
 
     private readonly IProblemDetailsService _problemDetailsService;
     private readonly ILogger<AuthorizationProblemDetailsResultHandler> _logger;
+    private readonly FaultlineOptions _options;
     private readonly IAuthorizationDenialObserver[] _observers;
 
     public AuthorizationProblemDetailsResultHandler(
         IProblemDetailsService problemDetailsService,
         ILogger<AuthorizationProblemDetailsResultHandler> logger,
+        IOptions<FaultlineOptions> options,
         IEnumerable<IAuthorizationDenialObserver>? observers = null)
     {
         ArgumentNullException.ThrowIfNull(problemDetailsService);
         ArgumentNullException.ThrowIfNull(logger);
+        ArgumentNullException.ThrowIfNull(options);
 
         _problemDetailsService = problemDetailsService;
         _logger = logger;
+        _options = options.Value;
         _observers = [.. observers ?? []];
     }
 
@@ -75,11 +80,7 @@ public sealed class AuthorizationProblemDetailsResultHandler : IAuthorizationMid
 
             await NotifyObserversAsync(context, authorizeResult);
             await context.ChallengeAsync();
-            await WriteProblemDetailsAsync(
-                context,
-                StatusCodes.Status401Unauthorized,
-                "Authentication is required.",
-                "The request requires a valid authenticated user.");
+            await WriteProblemDetailsAsync(context, ErrorResponseCatalog.ResolveFixed(FaultlineResponseKeys.Unauthorized, _options));
             return;
         }
 
@@ -94,11 +95,7 @@ public sealed class AuthorizationProblemDetailsResultHandler : IAuthorizationMid
 
             await NotifyObserversAsync(context, authorizeResult);
             await context.ForbidAsync();
-            await WriteProblemDetailsAsync(
-                context,
-                StatusCodes.Status403Forbidden,
-                "You do not have permission to perform this action.",
-                "The current user does not satisfy the authorization requirements for this operation.");
+            await WriteProblemDetailsAsync(context, ErrorResponseCatalog.ResolveFixed(FaultlineResponseKeys.Forbidden, _options));
             return;
         }
 
@@ -120,29 +117,29 @@ public sealed class AuthorizationProblemDetailsResultHandler : IAuthorizationMid
         }
     }
 
-    private async Task WriteProblemDetailsAsync(HttpContext context, int statusCode, string title, string detail)
+    private async Task WriteProblemDetailsAsync(HttpContext context, ResolvedResponse response)
     {
         if (context.Response.HasStarted)
         {
             return;
         }
 
-        context.Response.StatusCode = statusCode;
+        context.Response.StatusCode = response.Status;
 
         var written = await _problemDetailsService.TryWriteAsync(new ProblemDetailsContext
         {
             HttpContext = context,
             ProblemDetails = new ProblemDetails
             {
-                Status = statusCode,
-                Title = title,
-                Detail = detail
+                Status = response.Status,
+                Title = response.Title,
+                Detail = response.Detail
             }
         }).ConfigureAwait(false);
 
         if (!written)
         {
-            ProblemDetailsWriteFailedLogMessage(_logger, statusCode, null);
+            ProblemDetailsWriteFailedLogMessage(_logger, response.Status, null);
         }
     }
 }

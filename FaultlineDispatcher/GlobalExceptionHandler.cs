@@ -45,16 +45,17 @@ public sealed class GlobalExceptionHandler : IExceptionHandler
     public GlobalExceptionHandler(
         ILogger<GlobalExceptionHandler> logger,
         IProblemDetailsService problemDetailsService,
-        IEnumerable<IExceptionMapper>? mappers = null,
-        IOptions<FaultlineOptions>? options = null)
+        IOptions<FaultlineOptions> options,
+        IEnumerable<IExceptionMapper>? mappers = null)
     {
         ArgumentNullException.ThrowIfNull(logger);
         ArgumentNullException.ThrowIfNull(problemDetailsService);
+        ArgumentNullException.ThrowIfNull(options);
 
         _logger = logger;
         _problemDetailsService = problemDetailsService;
         _mappers = [.. mappers ?? [], DefaultMapper];
-        _options = options?.Value ?? new FaultlineOptions();
+        _options = options.Value;
     }
 
     public async ValueTask<bool> TryHandleAsync(HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
