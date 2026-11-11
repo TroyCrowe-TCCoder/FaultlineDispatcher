@@ -11,7 +11,8 @@
 
   <PropertyGroup>
 	<PackageId>FaultlineDispatcher.SqlServer</PackageId>
-	<Version>0.1.1</Version>
+	<Version>0.2.0</Version>
+	<PackageLicenseExpression>MIT</PackageLicenseExpression>
 	<Authors>Troy Crowe</Authors>
 	<Company>Single Source Management</Company>
 	<Description>SQL Server exception mapper for FaultlineDispatcher. Maps SqlException error numbers to safe, configurable HTTP responses.</Description>
@@ -23,6 +24,10 @@
 	<IncludeSymbols>true</IncludeSymbols>
 	<SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
+
+  <ItemGroup>
+	<InternalsVisibleTo Include="FaultlineDispatcher.Tests" />
+  </ItemGroup>
 
   <ItemGroup>
 	<None Include="README.md" Pack="true" PackagePath="\" Condition="Exists('README.md')" />

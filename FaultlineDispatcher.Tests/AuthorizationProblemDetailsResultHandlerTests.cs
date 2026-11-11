@@ -19,10 +19,16 @@ public class AuthorizationProblemDetailsResultHandlerTests
         new IAuthorizationRequirement[] { new AssertionRequirement(_ => true) },
         Array.Empty<string>());
 
-    private static AuthorizationProblemDetailsResultHandler CreateHandler(HttpContext context) =>
-        new(
+    private static AuthorizationProblemDetailsResultHandler CreateHandler(HttpContext context)
+    {
+        var options = new FaultlineOptions();
+        TestResponses.DefineAll(options);
+
+        return new(
             context.RequestServices.GetRequiredService<Microsoft.AspNetCore.Http.IProblemDetailsService>(),
-            NullLogger<AuthorizationProblemDetailsResultHandler>.Instance);
+            NullLogger<AuthorizationProblemDetailsResultHandler>.Instance,
+            Options.Create(options));
+    }
 
     [Fact]
     public async Task HandleAsync_CallsNextWhenSucceeded()
@@ -68,7 +74,7 @@ public class AuthorizationProblemDetailsResultHandlerTests
     [Fact]
     public void Constructor_ThrowsWhenProblemDetailsServiceIsNull()
     {
-        Assert.Throws<ArgumentNullException>(() => new AuthorizationProblemDetailsResultHandler(null!, NullLogger<AuthorizationProblemDetailsResultHandler>.Instance));
+        Assert.Throws<ArgumentNullException>(() => new AuthorizationProblemDetailsResultHandler(null!, NullLogger<AuthorizationProblemDetailsResultHandler>.Instance, Options.Create(new FaultlineOptions())));
     }
 
     [Fact]
@@ -77,7 +83,16 @@ public class AuthorizationProblemDetailsResultHandlerTests
         var (context, _) = TestHttpContextFactory.Create();
         var problemDetailsService = context.RequestServices.GetRequiredService<Microsoft.AspNetCore.Http.IProblemDetailsService>();
 
-        Assert.Throws<ArgumentNullException>(() => new AuthorizationProblemDetailsResultHandler(problemDetailsService, null!));
+        Assert.Throws<ArgumentNullException>(() => new AuthorizationProblemDetailsResultHandler(problemDetailsService, null!, Options.Create(new FaultlineOptions())));
+    }
+
+    [Fact]
+    public void Constructor_ThrowsWhenOptionsAreNull()
+    {
+        var (context, _) = TestHttpContextFactory.Create();
+        var problemDetailsService = context.RequestServices.GetRequiredService<Microsoft.AspNetCore.Http.IProblemDetailsService>();
+
+        Assert.Throws<ArgumentNullException>(() => new AuthorizationProblemDetailsResultHandler(problemDetailsService, NullLogger<AuthorizationProblemDetailsResultHandler>.Instance, null!));
     }
 
     private sealed class NoOpAuthenticationHandler : AuthenticationHandler<AuthenticationSchemeOptions>

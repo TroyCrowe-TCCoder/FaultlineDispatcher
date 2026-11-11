@@ -2,7 +2,6 @@ namespace FaultlineDispatcher.Tests;
 
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -131,10 +130,9 @@ public class ExceptionMappingTests
     }
 
     [Fact]
-    public async Task Configuration_OverridesOnlyTheFieldsSupplied()
+    public async Task HostResponse_IsWhatTheCallerSees()
     {
-        var config = new Dictionary<string, string?> { ["Faultline:Responses:Conflict:Title"] = "Already exists." };
-        var (context, body, handler) = Build(config, s => s.AddExceptionMapper<ConflictMapper>());
+        var (context, body, handler) = Build(o => o.Responses[FaultlineResponseKeys.Conflict] = new ErrorResponse { Status = 409, Title = "Already exists." }, s => s.AddExceptionMapper<ConflictMapper>());
 
         await handler.TryHandleAsync(context, new ConflictException(Secret), CancellationToken.None);
 
@@ -144,10 +142,9 @@ public class ExceptionMappingTests
     }
 
     [Fact]
-    public async Task Configuration_CanChangeStatus()
+    public async Task HostResponse_CanUseAnyErrorStatus()
     {
-        var config = new Dictionary<string, string?> { ["Faultline:Responses:Conflict:Status"] = "422" };
-        var (context, _, handler) = Build(config, s => s.AddExceptionMapper<ConflictMapper>());
+        var (context, _, handler) = Build(o => o.Responses[FaultlineResponseKeys.Conflict] = new ErrorResponse { Status = 422, Title = "Cannot process." }, s => s.AddExceptionMapper<ConflictMapper>());
 
         await handler.TryHandleAsync(context, new ConflictException(Secret), CancellationToken.None);
 
@@ -155,38 +152,50 @@ public class ExceptionMappingTests
     }
 
     [Fact]
-    public async Task Configuration_IgnoresInvalidStatus()
+    public async Task UnvalidatedResponseWithInvalidStatus_FallsBackToUnexpected()
     {
-        var config = new Dictionary<string, string?> { ["Faultline:Responses:Conflict:Status"] = "200" };
-        var (context, _, handler) = Build(config, s => s.AddExceptionMapper<ConflictMapper>());
+        var options = new FaultlineOptions();
+        TestResponses.DefineAll(options);
+        options.Responses[FaultlineResponseKeys.Conflict] = new ErrorResponse { Status = 200, Title = "Fine." };
+        var (context, body, handler) = BuildUnvalidated(options);
 
         await handler.TryHandleAsync(context, new ConflictException(Secret), CancellationToken.None);
 
-        Assert.Equal(409, context.Response.StatusCode);
+        var problem = TestHttpContextFactory.ReadProblemDetails(body);
+        Assert.Equal(500, context.Response.StatusCode);
+        Assert.Equal("An unexpected error occurred.", problem!.Title);
     }
 
     [Fact]
-    public async Task HostDefinedKey_UsesConfiguredResponse()
+    public async Task HostDefinedKey_UsesSuppliedResponse()
     {
-        var config = new Dictionary<string, string?>
-        {
-            ["Faultline:Responses:Forbidden:Status"] = "403",
-            ["Faultline:Responses:Forbidden:Title"] = "Access denied."
-        };
-        var (context, body, handler) = Build(config, s => s.AddExceptionMapper<ForbiddenMapper>());
+        var (context, body, handler) = Build(o => o.Responses["Teapot"] = new ErrorResponse { Status = 418, Title = "Short and stout." }, s => s.AddExceptionMapper<TeapotMapper>());
+
+        await handler.TryHandleAsync(context, new ConflictException(Secret), CancellationToken.None);
+
+        var problem = TestHttpContextFactory.ReadProblemDetails(body);
+        Assert.Equal(418, context.Response.StatusCode);
+        Assert.Equal("Short and stout.", problem!.Title);
+        Assert.Null(problem.Detail);
+    }
+
+    [Fact]
+    public async Task MapperReturningForbidden_UsesFixed403_WithHostText()
+    {
+        var (context, body, handler) = Build(extra: s => s.AddExceptionMapper<ForbiddenMapper>());
 
         await handler.TryHandleAsync(context, new ConflictException(Secret), CancellationToken.None);
 
         var problem = TestHttpContextFactory.ReadProblemDetails(body);
         Assert.Equal(403, context.Response.StatusCode);
-        Assert.Equal("Access denied.", problem!.Title);
-        Assert.Null(problem.Detail);
+        Assert.Equal("You do not have permission to perform this action.", problem!.Title);
+        Assert.DoesNotContain(Secret, RawBody(body));
     }
 
     [Fact]
-    public async Task HostDefinedKey_WithoutConfiguration_Returns500()
+    public async Task HostDefinedKey_WithoutDefinition_Returns500()
     {
-        var (context, body, handler) = Build(extra: s => s.AddExceptionMapper<ForbiddenMapper>());
+        var (context, body, handler) = Build(extra: s => s.AddExceptionMapper<TeapotMapper>());
 
         await handler.TryHandleAsync(context, new ConflictException(Secret), CancellationToken.None);
 
@@ -194,18 +203,41 @@ public class ExceptionMappingTests
         Assert.DoesNotContain(Secret, RawBody(body));
     }
 
+    [Fact]
+    public async Task UnvalidatedEmptyOptions_Returns500_WithoutThrowingOrExposingMessage()
+    {
+        var (context, body, handler) = BuildUnvalidated(new FaultlineOptions());
+
+        var handled = await handler.TryHandleAsync(context, new InvalidOperationException(Secret), CancellationToken.None);
+
+        Assert.True(handled);
+        Assert.Equal(500, context.Response.StatusCode);
+        Assert.DoesNotContain(Secret, RawBody(body));
+    }
+
     private static (HttpContext Context, MemoryStream Body, IExceptionHandler Handler) Build(
-        Dictionary<string, string?>? config = null,
+        Action<FaultlineOptions>? configure = null,
         Action<IServiceCollection>? extra = null)
     {
         var (context, body) = TestHttpContextFactory.Create(services =>
         {
-            services.AddSingleton<IConfiguration>(new ConfigurationBuilder().AddInMemoryCollection(config ?? []).Build());
-            services.AddFaultlineDispatcher();
+            services.AddTestFaultline(configure);
             extra?.Invoke(services);
         });
 
         return (context, body, context.RequestServices.GetRequiredService<IExceptionHandler>());
+    }
+
+    private static (HttpContext Context, MemoryStream Body, IExceptionHandler Handler) BuildUnvalidated(FaultlineOptions options)
+    {
+        var (context, body) = TestHttpContextFactory.Create();
+        var handler = new GlobalExceptionHandler(
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<GlobalExceptionHandler>.Instance,
+            context.RequestServices.GetRequiredService<IProblemDetailsService>(),
+            Microsoft.Extensions.Options.Options.Create(options),
+            [new ConflictMapper()]);
+
+        return (context, body, handler);
     }
 
     private static string RawBody(MemoryStream body)
@@ -228,7 +260,12 @@ public class ExceptionMappingTests
 
     private sealed class ForbiddenMapper : IExceptionMapper
     {
-        public string? Map(Exception exception) => exception is ConflictException ? "Forbidden" : null;
+        public string? Map(Exception exception) => exception is ConflictException ? FaultlineResponseKeys.Forbidden : null;
+    }
+
+    private sealed class TeapotMapper : IExceptionMapper
+    {
+        public string? Map(Exception exception) => exception is ConflictException ? "Teapot" : null;
     }
 
     private sealed class ThrowingMapper : IExceptionMapper

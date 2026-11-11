@@ -1,6 +1,5 @@
 namespace FaultlineDispatcher;
 
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 /// <summary>
@@ -12,9 +11,8 @@ using Microsoft.Extensions.DependencyInjection;
 public interface ITelemetryBootstrap
 {
     /// <summary>
-    /// Registers the telemetry provider's services into <paramref name="services"/>. Must be
-    /// safe to call with no telemetry connection string/key configured (no-op or local-only
-    /// behavior expected in that case).
+    /// Registers the telemetry provider's services into <paramref name="services"/>. Implementations take their
+    /// settings from the host through their own constructor or options delegate and never read configuration.
     /// </summary>
-    void Configure(IServiceCollection services, IConfiguration configuration);
+    void Configure(IServiceCollection services);
 }

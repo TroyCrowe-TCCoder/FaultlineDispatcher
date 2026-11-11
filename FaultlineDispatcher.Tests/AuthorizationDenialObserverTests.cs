@@ -70,7 +70,7 @@ public class AuthorizationDenialObserverTests
         TestHttpContextFactory.Create(services =>
         {
             services.AddAuthentication("Test").AddScheme<AuthenticationSchemeOptions, NoOpAuthenticationHandler>("Test", _ => { });
-            services.AddFaultlineDispatcher();
+            services.AddTestFaultline();
             configure(services);
         });
 

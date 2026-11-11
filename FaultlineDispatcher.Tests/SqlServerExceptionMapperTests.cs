@@ -19,7 +19,7 @@ public class SqlServerExceptionMapperTests
     [InlineData(60199, "BadRequest")]
     public void ResolveKey_MapsBuiltInNumbers(int number, string expected)
     {
-        Assert.Equal(expected, new SqlServerExceptionMapper().ResolveKey(number));
+        Assert.Equal(expected, CreateMapper().ResolveKey(number));
     }
 
     [Theory]
@@ -29,16 +29,17 @@ public class SqlServerExceptionMapperTests
     [InlineData(60200)]
     public void ResolveKey_ReturnsNullForUnmappedNumbers(int number)
     {
-        Assert.Null(new SqlServerExceptionMapper().ResolveKey(number));
+        Assert.Null(CreateMapper().ResolveKey(number));
     }
 
     [Fact]
     public void ResolveKey_ConfiguredNumberOverridesBuiltInAndRange()
     {
-        var options = new SqlServerFaultlineOptions();
-        options.Errors[60073] = FaultlineResponseKeys.ContentNotFound;
-        options.Errors[2627] = "Custom";
-        var mapper = new SqlServerExceptionMapper(Options.Create(options));
+        var mapper = CreateMapper(o =>
+        {
+            o.Errors[60073] = FaultlineResponseKeys.ContentNotFound;
+            o.Errors[2627] = "Custom";
+        });
 
         Assert.Equal(FaultlineResponseKeys.ContentNotFound, mapper.ResolveKey(60073));
         Assert.Equal("Custom", mapper.ResolveKey(2627));
@@ -47,13 +48,12 @@ public class SqlServerExceptionMapperTests
     [Fact]
     public void ResolveKey_HonorsConfiguredRangeAndKey()
     {
-        var options = new SqlServerFaultlineOptions
+        var mapper = CreateMapper(o =>
         {
-            ApplicationErrorRangeStart = 50000,
-            ApplicationErrorRangeEnd = 50010,
-            ApplicationErrorKey = FaultlineResponseKeys.Conflict
-        };
-        var mapper = new SqlServerExceptionMapper(Options.Create(options));
+            o.ApplicationErrorRangeStart = 50000;
+            o.ApplicationErrorRangeEnd = 50010;
+            o.ApplicationErrorKey = FaultlineResponseKeys.Conflict;
+        });
 
         Assert.Equal(FaultlineResponseKeys.Conflict, mapper.ResolveKey(50005));
         Assert.Null(mapper.ResolveKey(60000));
@@ -62,7 +62,7 @@ public class SqlServerExceptionMapperTests
     [Fact]
     public void Map_ReturnsNullForNonSqlExceptions()
     {
-        Assert.Null(new SqlServerExceptionMapper().Map(new InvalidOperationException()));
+        Assert.Null(CreateMapper().Map(new InvalidOperationException()));
     }
 
     [Fact]
@@ -70,9 +70,81 @@ public class SqlServerExceptionMapperTests
     {
         var services = new ServiceCollection();
 
-        services.AddFaultlineSqlServer();
-        services.AddFaultlineSqlServer();
+        services.AddFaultlineSqlServer(Configure);
+        services.AddFaultlineSqlServer(Configure);
 
         Assert.Single(services, d => d.ServiceType == typeof(IExceptionMapper) && d.ImplementationType == typeof(SqlServerExceptionMapper));
+    }
+
+    [Fact]
+    public void AddFaultlineSqlServer_ThrowsWhenConfigureIsNull()
+    {
+        Assert.Throws<ArgumentNullException>(() => new ServiceCollection().AddFaultlineSqlServer(null!));
+    }
+
+    [Fact]
+    public void AddFaultlineSqlServer_WithInvalidOptions_FailsValidation()
+    {
+        var services = new ServiceCollection();
+        services.AddFaultlineSqlServer(_ => { });
+
+        using var provider = services.BuildServiceProvider();
+
+        Assert.Throws<OptionsValidationException>(() => provider.GetRequiredService<IOptions<SqlServerFaultlineOptions>>().Value);
+    }
+
+    [Fact]
+    public void Validator_Succeeds_ForCompleteOptions()
+    {
+        var options = new SqlServerFaultlineOptions();
+        Configure(options);
+
+        Assert.True(new SqlServerFaultlineOptionsValidator().Validate(null, options).Succeeded);
+    }
+
+    [Fact]
+    public void Validator_Fails_WhenRangeEndIsBeforeStart()
+    {
+        var options = new SqlServerFaultlineOptions();
+        Configure(options);
+        options.ApplicationErrorRangeEnd = options.ApplicationErrorRangeStart - 1;
+
+        Assert.True(new SqlServerFaultlineOptionsValidator().Validate(null, options).Failed);
+    }
+
+    [Fact]
+    public void Validator_Fails_WhenApplicationErrorKeyIsBlank()
+    {
+        var options = new SqlServerFaultlineOptions();
+        Configure(options);
+        options.ApplicationErrorKey = " ";
+
+        Assert.True(new SqlServerFaultlineOptionsValidator().Validate(null, options).Failed);
+    }
+
+    [Fact]
+    public void Validator_Fails_WhenAnErrorEntryHasABlankKey()
+    {
+        var options = new SqlServerFaultlineOptions();
+        Configure(options);
+        options.Errors[60073] = string.Empty;
+
+        Assert.True(new SqlServerFaultlineOptionsValidator().Validate(null, options).Failed);
+    }
+
+    private static void Configure(SqlServerFaultlineOptions options)
+    {
+        options.ApplicationErrorRangeStart = 60000;
+        options.ApplicationErrorRangeEnd = 60199;
+        options.ApplicationErrorKey = FaultlineResponseKeys.BadRequest;
+    }
+
+    private static SqlServerExceptionMapper CreateMapper(Action<SqlServerFaultlineOptions>? extra = null)
+    {
+        var options = new SqlServerFaultlineOptions();
+        Configure(options);
+        extra?.Invoke(options);
+
+        return new SqlServerExceptionMapper(Options.Create(options));
     }
 }
